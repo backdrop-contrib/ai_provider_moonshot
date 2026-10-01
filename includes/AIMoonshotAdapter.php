@@ -10,10 +10,17 @@ class AIMoonshotAdapter extends AIAdapterBase {
   use AICompatibleTrait;
 
   /** @var string */
-  protected $baseUrl = 'https://api.moonshot.cn/v1';
+  protected $baseUrl = 'https://api.moonshot.ai/v1';
 
   /** @var array|null */
   protected $models = NULL;
+
+  /**
+   * Per-model capability flags reported by /models, keyed by model ID.
+   *
+   * @var array
+   */
+  protected $modelInfo = [];
 
   /**
    * {@inheritdoc}
@@ -22,17 +29,17 @@ class AIMoonshotAdapter extends AIAdapterBase {
     parent::__construct($api_key, $api);
 
     $config = config('ai_provider_moonshot.settings');
-    $region = $config->get('endpoint_region') ?: 'china';
+    $region = $config->get('endpoint_region') ?: 'global';
     $custom_url = trim((string) $config->get('custom_url'));
 
     if ($region === 'custom' && $custom_url !== '') {
       $this->baseUrl = rtrim($custom_url, '/');
     }
-    elseif ($region === 'global') {
-      $this->baseUrl = 'https://api.moonshot.ai/v1';
+    elseif ($region === 'china') {
+      $this->baseUrl = 'https://api.moonshot.cn/v1';
     }
     else {
-      $this->baseUrl = 'https://api.moonshot.cn/v1';
+      $this->baseUrl = 'https://api.moonshot.ai/v1';
     }
   }
 
@@ -54,33 +61,25 @@ class AIMoonshotAdapter extends AIAdapterBase {
       return $this->models;
     }
 
+    // The catalog changes often (whole model series are retired), so there is
+    // no built-in fallback list; an unreachable API means no models.
     $models = [];
     try {
       $result = $this->makeRequest($this->baseUrl . '/models', [], [], 'GET', 10);
-      if (!empty($result['data']) && is_array($result['data'])) {
-        foreach ($result['data'] as $model) {
-          $id = $model['id'] ?? ($model['name'] ?? NULL);
-          if (!empty($id)) {
-            $models[$id] = $model['name'] ?? $id;
-          }
+      foreach ($result['data'] ?? [] as $model) {
+        $id = $model['id'] ?? NULL;
+        if (empty($id)) {
+          continue;
         }
+        $models[$id] = $id;
+        $this->modelInfo[$id] = [
+          'vision' => !empty($model['supports_image_in']),
+          'thinking' => !empty($model['supports_reasoning']),
+        ];
       }
     }
     catch (\Exception $e) {
-      watchdog('ai_provider_moonshot', 'Failed to fetch Moonshot models: @message', ['@message' => $e->getMessage()], WATCHDOG_DEBUG);
-    }
-
-    if (empty($models)) {
-      $models = [
-        'kimi-k3' => 'Kimi K3 (Multimodal & Reasoning, 1M context)',
-        'kimi-k2.7-code' => 'Kimi K2.7 Code',
-        'kimi-k2.7-code-highspeed' => 'Kimi K2.7 Code HighSpeed',
-        'kimi-k2.6' => 'Kimi K2.6',
-        'kimi-k2.5' => 'Kimi K2.5',
-        'moonshot-v1-8k' => 'Moonshot V1 8K',
-        'moonshot-v1-32k' => 'Moonshot V1 32K',
-        'moonshot-v1-128k' => 'Moonshot V1 128K',
-      ];
+      watchdog('ai_provider_moonshot', 'Failed to fetch Moonshot models: @message', ['@message' => $e->getMessage()], WATCHDOG_WARNING);
     }
 
     asort($models);
@@ -96,30 +95,20 @@ class AIMoonshotAdapter extends AIAdapterBase {
     $filtered = [];
 
     foreach ($models as $id => $label) {
-      $ok = FALSE;
       switch ($capability) {
         case 'text':
-        case 'chat':
-          $ok = TRUE;
-          break;
-
-        case 'thinking':
-          $ok = (bool) preg_match('/k3|k2\.7|k2\.6|thinking/i', $id);
-          break;
-
         case 'tool_calling':
           $ok = TRUE;
           break;
 
+        // Reported per model by /models (supports_image_in,
+        // supports_reasoning).
         case 'vision':
-          $ok = (bool) preg_match('/k3|vision/i', $id);
+        case 'thinking':
+          $ok = !empty($this->modelInfo[$id][$capability]);
           break;
 
-        case 'embeddings':
-        case 'embedding':
-        case 'image':
-        case 'moderation':
-        case 'stt':
+        default:
           $ok = FALSE;
           break;
       }
@@ -131,6 +120,24 @@ class AIMoonshotAdapter extends AIAdapterBase {
 
     backdrop_alter('ai_model_capabilities', $filtered, $capability, $this);
     return $filtered;
+  }
+
+  /**
+   * Build the shared chat-completions payload.
+   *
+   * Current Kimi models fix temperature (and top_p, penalties) server-side
+   * and the docs say to omit them, so the caller's temperature is not sent.
+   * max_tokens is deprecated in favor of max_completion_tokens.
+   */
+  protected function buildPayload(string $model, array $messages, $max_tokens): array {
+    $payload = [
+      'model' => $model,
+      'messages' => $messages,
+    ];
+    if ((int) $max_tokens > 0) {
+      $payload['max_completion_tokens'] = (int) $max_tokens;
+    }
+    return $payload;
   }
 
   /**
@@ -147,14 +154,7 @@ class AIMoonshotAdapter extends AIAdapterBase {
    * {@inheritdoc}
    */
   public function chat(string $model, array $messages, $temperature, $max_tokens = 1024, bool $stream_response = FALSE, array $context_extra = []) {
-    $payload = [
-      'model' => $model,
-      'messages' => $messages,
-      'temperature' => (float) $temperature,
-    ];
-    if ((int) $max_tokens > 0) {
-      $payload['max_tokens'] = (int) $max_tokens;
-    }
+    $payload = $this->buildPayload($model, $messages, $max_tokens);
 
     if (!empty($context_extra['response_format'])) {
       $payload['response_format'] = $context_extra['response_format'];
@@ -201,16 +201,9 @@ class AIMoonshotAdapter extends AIAdapterBase {
    * {@inheritdoc}
    */
   public function chatWithTools(string $model, array $messages, array $tools, $temperature, $max_tokens = 1024, string $tool_choice = 'auto', array $context_extra = []): array {
-    $payload = [
-      'model' => $model,
-      'messages' => $messages,
-      'tools' => $tools,
-      'tool_choice' => $tool_choice,
-      'temperature' => (float) $temperature,
-    ];
-    if ((int) $max_tokens > 0) {
-      $payload['max_tokens'] = (int) $max_tokens;
-    }
+    $payload = $this->buildPayload($model, $messages, $max_tokens);
+    $payload['tools'] = $tools;
+    $payload['tool_choice'] = $tool_choice;
 
     $url = $this->baseUrl . '/chat/completions';
 

@@ -9,18 +9,20 @@ using its OpenAI-compatible API.
 
 | Operation | Supported | Notes |
 |---|---|---|
-| Chat | Yes | Streaming supported. JSON mode and JSON schema responses supported. |
+| Chat | Yes | Streaming supported. JSON mode and JSON schema responses supported. Temperature is not sent: current Kimi models fix it server-side. |
 | Completions | Yes | Sent as a single chat message; uses the chat endpoint. |
-| Tool calling | Yes | Standard `tools` / `tool_choice` payload. |
-| Thinking | Yes | Kimi K3, K2.7 and K2.6 models. |
-| Vision | Yes | Kimi K3 and vision models. |
+| Tool calling | Yes | Standard `tools` / `tool_choice` payload. The model's `reasoning_content` is returned so agent tool loops can send it back, as thinking models require. |
+| Thinking | Yes | Models that `/models` reports with `supports_reasoning`. |
+| Vision | Yes | Models that `/models` reports with `supports_image_in`. |
 | Embeddings | No | |
 | Image generation | No | |
 | Moderation | No | |
 | Speech-to-text | No | |
 
-The model list is fetched from the API's `/models` endpoint, falling back to a
-built-in list of Kimi and Moonshot V1 models when the request fails.
+The model list and the vision/thinking flags come from the API's `/models`
+endpoint. There is no built-in fallback list: Moonshot retires whole model
+series, so a hardcoded list goes stale. Use the Model capabilities page to
+adjust what each model is offered for.
 
 ## Endpoint region
 
@@ -28,8 +30,8 @@ Moonshot runs separate gateways for accounts registered in China and
 internationally, and a key only works on its own region. The provider settings
 at `admin/config/ai/settings` add:
 
-- **Endpoint Region** — China (`https://api.moonshot.cn/v1`, the default),
-  Global (`https://api.moonshot.ai/v1`), or Custom.
+- **Endpoint Region** — International (`https://api.moonshot.ai/v1`, the
+  default), China (`https://api.moonshot.cn/v1`), or Custom.
 - **Custom Base URL** — used when Custom is selected, for proxies or private
   gateways.
 
@@ -37,7 +39,7 @@ at `admin/config/ai/settings` add:
 
 - Install this module using the official [Backdrop CMS instructions](https://backdropcms.org/user-guide/modules).
 - Create an authentication key with the Key module holding your Moonshot API
-  key (https://platform.moonshot.cn/console/api-keys).
+  key (https://platform.kimi.ai/console/api-keys, or platform.kimi.com for China).
 - Enable and configure the provider at `admin/config/ai/settings`, choosing the
   region that matches your account.
 

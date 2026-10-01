@@ -1,5 +1,5 @@
 {
   "_config_name": "ai_provider_moonshot.settings",
-  "endpoint_region": "china",
+  "endpoint_region": "global",
   "custom_url": ""
 }
