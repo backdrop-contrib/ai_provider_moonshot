@@ -1,0 +1,96 @@
+<?php
+
+/**
+ * @file
+ * Moonshot AI (Kimi) provider for AI core.
+ */
+
+/**
+ * Implements hook_autoload_info().
+ */
+function ai_provider_moonshot_autoload_info() {
+  return [
+    'AIMoonshotAdapter' => 'includes/AIMoonshotAdapter.php',
+  ];
+}
+
+/**
+ * Implements hook_ai_provider_info().
+ */
+function ai_provider_moonshot_ai_provider_info() {
+  return [
+    'moonshot' => [
+      'label' => t('Moonshot AI (Kimi)'),
+      'description' => t('Moonshot AI (Kimi) provider offering long-context reasoning, code, and chat models via OpenAI-compatible endpoints.'),
+      'class' => 'AIMoonshotAdapter',
+      'website' => 'https://www.moonshot.cn/',
+      'key_url' => 'https://platform.moonshot.cn/console/api-keys',
+      'models_url' => 'https://platform.moonshot.cn/docs/pricing',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_config_info().
+ */
+function ai_provider_moonshot_config_info() {
+  return [
+    'ai_provider_moonshot.settings' => [
+      'label' => t('Moonshot AI Settings'),
+      'group' => t('Configuration'),
+    ],
+  ];
+}
+
+/**
+ * Implements hook_ai_provider_settings_alter().
+ */
+function ai_provider_moonshot_ai_provider_settings_alter(&$settings, $context) {
+  if ($context['provider'] !== 'moonshot') {
+    return;
+  }
+
+  $config = config('ai_provider_moonshot.settings');
+
+  $settings['moonshot_endpoint_region'] = [
+    '#type' => 'radios',
+    '#title' => t('Endpoint Region / Base URL'),
+    '#default_value' => $config->get('endpoint_region') ?: 'china',
+    '#options' => [
+      'china' => t('China API Gateway (<code>https://api.moonshot.cn/v1</code>)'),
+      'global' => t('Global / International Gateway (<code>https://api.moonshot.ai/v1</code>)'),
+      'custom' => t('Custom Base URL'),
+    ],
+    '#description' => t('Select the API endpoint corresponding to your Moonshot AI account region.'),
+  ];
+
+  $settings['moonshot_custom_url'] = [
+    '#type' => 'textfield',
+    '#title' => t('Custom Base URL'),
+    '#default_value' => $config->get('custom_url') ?: '',
+    '#description' => t('Specify a custom base URL if using a proxy, custom gateway, or private endpoint.'),
+    '#states' => [
+      'visible' => [
+        ':input[name="moonshot_endpoint_region"]' => ['value' => 'custom'],
+      ],
+    ],
+  ];
+
+  $context['form']['#submit'][] = 'ai_provider_moonshot_settings_submit';
+}
+
+/**
+ * Submit handler for Moonshot provider settings.
+ */
+function ai_provider_moonshot_settings_submit($form, &$form_state) {
+  $config = config('ai_provider_moonshot.settings');
+
+  if (isset($form_state['values']['moonshot_endpoint_region'])) {
+    $config->set('endpoint_region', $form_state['values']['moonshot_endpoint_region']);
+  }
+  if (isset($form_state['values']['moonshot_custom_url'])) {
+    $config->set('custom_url', trim($form_state['values']['moonshot_custom_url']));
+  }
+
+  $config->save();
+}

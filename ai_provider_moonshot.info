@@ -1,0 +1,8 @@
+name = AI Provider Moonshot (Kimi)
+description = Moonshot AI (Kimi) provider offering long-context reasoning, code, and chat models.
+backdrop = 1.x
+type = module
+php = 8.0
+package = AI
+dependencies[] = ai
+dependencies[] = key
