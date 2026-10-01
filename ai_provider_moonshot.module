@@ -23,9 +23,9 @@ function ai_provider_moonshot_ai_provider_info() {
       'label' => t('Moonshot AI (Kimi)'),
       'description' => t('Moonshot AI (Kimi) provider offering long-context reasoning, code, and chat models via OpenAI-compatible endpoints.'),
       'class' => 'AIMoonshotAdapter',
-      'website' => 'https://www.moonshot.cn/',
-      'key_url' => 'https://platform.moonshot.cn/console/api-keys',
-      'models_url' => 'https://platform.moonshot.cn/docs/pricing',
+      'website' => 'https://www.kimi.ai/',
+      'key_url' => 'https://platform.kimi.ai/console/api-keys',
+      'models_url' => 'https://platform.kimi.ai/docs/models',
     ],
   ];
 }
@@ -55,10 +55,10 @@ function ai_provider_moonshot_ai_provider_settings_alter(&$settings, $context) {
   $settings['moonshot_endpoint_region'] = [
     '#type' => 'radios',
     '#title' => t('Endpoint Region / Base URL'),
-    '#default_value' => $config->get('endpoint_region') ?: 'china',
+    '#default_value' => $config->get('endpoint_region') ?: 'global',
     '#options' => [
-      'china' => t('China API Gateway (<code>https://api.moonshot.cn/v1</code>)'),
-      'global' => t('Global / International Gateway (<code>https://api.moonshot.ai/v1</code>)'),
+      'global' => t('International (<code>https://api.moonshot.ai/v1</code>, keys from platform.kimi.ai)'),
+      'china' => t('China (<code>https://api.moonshot.cn/v1</code>, keys from platform.kimi.com)'),
       'custom' => t('Custom Base URL'),
     ],
     '#description' => t('Select the API endpoint corresponding to your Moonshot AI account region.'),
@@ -71,7 +71,7 @@ function ai_provider_moonshot_ai_provider_settings_alter(&$settings, $context) {
     '#description' => t('Specify a custom base URL if using a proxy, custom gateway, or private endpoint.'),
     '#states' => [
       'visible' => [
-        ':input[name="moonshot_endpoint_region"]' => ['value' => 'custom'],
+        ':input[name="providers[moonshot_settings][moonshot_endpoint_region]"]' => ['value' => 'custom'],
       ],
     ],
   ];
@@ -83,13 +83,16 @@ function ai_provider_moonshot_ai_provider_settings_alter(&$settings, $context) {
  * Submit handler for Moonshot provider settings.
  */
 function ai_provider_moonshot_settings_submit($form, &$form_state) {
+  // The providers form uses #tree, so these values sit under the provider's
+  // settings container, not at the top level.
+  $values = $form_state['values']['providers']['moonshot_settings'] ?? [];
   $config = config('ai_provider_moonshot.settings');
 
-  if (isset($form_state['values']['moonshot_endpoint_region'])) {
-    $config->set('endpoint_region', $form_state['values']['moonshot_endpoint_region']);
+  if (isset($values['moonshot_endpoint_region'])) {
+    $config->set('endpoint_region', $values['moonshot_endpoint_region']);
   }
-  if (isset($form_state['values']['moonshot_custom_url'])) {
-    $config->set('custom_url', trim($form_state['values']['moonshot_custom_url']));
+  if (isset($values['moonshot_custom_url'])) {
+    $config->set('custom_url', trim($values['moonshot_custom_url']));
   }
 
   $config->save();
