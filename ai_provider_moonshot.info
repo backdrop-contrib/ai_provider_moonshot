@@ -1,4 +1,4 @@
-name = AI Provider Moonshot (Kimi)
+name = AI Provider Moonshot
 description = Moonshot AI (Kimi) provider offering long-context reasoning, code, and chat models.
 backdrop = 1.x
 type = module
